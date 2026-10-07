@@ -1,0 +1,19 @@
+{
+  "_ayuda": "Traduce los codigos de Tuya a los datos del puente. Editable sin tocar el codigo.",
+  "_campos": "temperatura, temperatura_2, temperatura_interior, punto_rocio, sensacion, humedad, humedad_2, humedad_interior, presion, viento_kmh, rafaga_kmh, viento_dir, lluvia_mm, lluvia_tasa_mmh, uv, radiacion, bateria",
+  "_unidades": "unidad_origen: kmh|m/s|mph|kt, hpa|pa|inhg|mmhg, c|f, mm|in",
+  "mapeo": {
+    "temperatura": { "code": "temp_current_external", "escala": 0.1, "unidad_origen": "c" },
+    "humedad": { "code": "humidity_outdoor", "escala": 1 },
+    "temperatura_interior": { "code": "temp_current", "escala": 0.1, "unidad_origen": "c" },
+    "humedad_interior": { "code": "humidity_value", "escala": 1 },
+    "presion": { "code": "atmospheric_pressture", "escala": 1, "unidad_origen": "hpa" },
+    "viento_kmh": { "code": "windspeed_avg", "escala": 0.1, "unidad_origen": "km/h" },
+    "rafaga_kmh": { "code": "windspeed_gust", "escala": 0.1, "unidad_origen": "km/h" },
+    "lluvia_mm": { "code": "rain_24h", "escala": 0.1, "unidad_origen": "mm" },
+    "lluvia_tasa_mmh": { "code": "rain_rate", "escala": 0.1, "unidad_origen": "mm" },
+    "uv": { "code": "uv_index", "escala": 1 },
+    "punto_rocio": { "code": "dew_point_temp", "escala": 0.1, "unidad_origen": "c" },
+    "bateria": { "code": "battery_percentage", "escala": 1 }
+  }
+}

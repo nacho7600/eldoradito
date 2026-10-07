@@ -1,0 +1,72 @@
+name: Puente Tuya a Windguru
+
+# Lee la estacion Tuya (iot.tuya.com) y publica en Windguru / Weathercloud,
+# sin necesidad de tener una PC encendida. Corre en los servidores de GitHub.
+
+on:
+  schedule:
+    # Cada hora en punto (horario UTC). El repositorio es PRIVADO y el plan gratuito
+    # incluye 2.000 minutos/mes de Actions, facturando cada corrida como minimo 1 minuto:
+    # cada 10 minutos serian ~4.300 min/mes y no entra. Cada hora son ~730 min/mes.
+    # Si algun dia lo pasas a publico, podes usar '*/10 * * * *' sin costo.
+    - cron: '0 * * * *'
+  workflow_dispatch:
+    inputs:
+      simular:
+        description: 'Solo leer y mostrar, sin publicar'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: puente-tuya
+  cancel-in-progress: false
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Bajar el repositorio
+        uses: actions/checkout@v4
+
+      - name: Preparar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Instalar dependencias
+        run: pip install --disable-pip-version-check tinytuya requests
+
+      - name: Leer la estacion y publicar
+        env:
+          TUYA_REGION: us
+          TUYA_ACCESS_ID: ${{ secrets.TUYA_ACCESS_ID }}
+          TUYA_ACCESS_SECRET: ${{ secrets.TUYA_ACCESS_SECRET }}
+          TUYA_DEVICE_ID: ${{ secrets.TUYA_DEVICE_ID }}
+          WINDGURU_UID: ${{ secrets.WINDGURU_UID }}
+          WINDGURU_PASSWORD: ${{ secrets.WINDGURU_PASSWORD }}
+          WEATHERCLOUD_WID: ${{ secrets.WEATHERCLOUD_WID }}
+          WEATHERCLOUD_KEY: ${{ secrets.WEATHERCLOUD_KEY }}
+          ESTACION: El Doradito
+          HISTORIAL: data/historial.csv
+          MAX_ANTIGUEDAD_MIN: '90'
+        run: |
+          if [ "${{ github.event.inputs.simular }}" = "true" ]; then
+            python sync_tuya.py --simular
+          else
+            python sync_tuya.py
+          fi
+
+      - name: Guardar el historial en el repositorio
+        run: |
+          git config user.name "puente-tuya"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/historial.csv
+          if git diff --staged --quiet; then
+            echo "Sin cambios en el historial."
+          else
+            git commit -m "historial $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            git push
+          fi
