@@ -55,6 +55,8 @@ jobs:
           ESTADO_CRUDO: data/estado_crudo.json
           BACKFILL_HORAS: '24'
           BACKFILL_MINUTOS: '30'
+          BACKFILL_BLOQUE_HORAS: '2'
+          BACKFILL_BLOQUES: '4'
           MAX_ANTIGUEDAD_MIN: '90'
         run: |
           if [ "${{ github.event.inputs.simular }}" = "true" ]; then

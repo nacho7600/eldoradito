@@ -341,16 +341,20 @@ def ruta_por_dia(ruta_base, dia):
 
 
 def completar_historial(estacion, device_id, mapeo, valores_actuales, ruta_csv, ruta_estado,
-                        horas_iniciales, minutos_entre):
+                        horas_iniciales, minutos_entre, bloque_horas, bloques_max):
     """Agrega al CSV completo todas las mediciones que pasaron desde la ultima corrida.
 
-    Tuya limita la frecuencia de la consulta del registro ("The log query is too frequent"),
-    asi que se consulta como maximo una vez cada `minutos_entre` minutos. Si falla, se anota
-    el intento (para no insistir) pero NO se pierde el rango: la proxima vez trae todo junto.
+    Tuya tiene dos limites que condicionan esto:
+      * la consulta del registro no se puede hacer muy seguido ("The log query is too
+        frequent"), asi que se consulta como maximo una vez cada `minutos_entre` minutos;
+      * una ventana grande NO devuelve todo: corta y deja afuera los registros mas viejos.
+        Por eso se consulta en bloques de `bloque_horas` horas, y si sobra presupuesto se
+        sigue hacia atras para recuperar lo mas viejo que Tuya conserve.
     """
     guardado = leer_json(ruta_estado, {}) or {}
     estado = dict(guardado.get("estado") or {})
     ultimo_ms = guardado.get("ultimo_ms")
+    cubierto_desde = guardado.get("cubierto_desde_ms")
     intento_ms = guardado.get("intento_ms")
 
     ahora = datetime.now(timezone.utc)
@@ -362,23 +366,70 @@ def completar_historial(estacion, device_id, mapeo, valores_actuales, ruta_csv, 
               % ((ahora_ms - int(intento_ms)) / 60000.0, minutos_entre))
         return 0
 
+    bloque_ms = int(bloque_horas * 3600 * 1000)
     hasta_ms = ahora_ms
     if ultimo_ms:
         desde_ms = int(ultimo_ms)
     else:
         desde_ms = int((ahora - timedelta(hours=horas_iniciales)).timestamp() * 1000)
-        print("Primera corrida del historial completo: traigo las ultimas %s horas" % horas_iniciales)
 
-    try:
-        eventos = traer_eventos(estacion, device_id, desde_ms, hasta_ms)
-    except Exception:
-        guardar_json(ruta_estado, dict(guardado, intento_ms=ahora_ms))
-        raise
+    # Tuya NO devuelve todos los registros de una ventana grande: si se pide mucho, corta y
+    # deja afuera los mas viejos. Por eso se consulta en bloques chicos, priorizando lo mas
+    # reciente, y si sobra presupuesto se sigue hacia atras.
+    filas = []
+    usados = 0
+    total_eventos = 0
+    error_limite = None
 
-    print("Eventos en el registro de Tuya: %d (desde %s)"
-          % (len(eventos), datetime.fromtimestamp(desde_ms / 1000.0, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")))
+    ventana = bloques_max * bloque_ms
+    cursor = max(desde_ms, hasta_ms - ventana)
+    # `pendiente` es el punto mas viejo que ya tenemos cubierto: desde ahi se sigue bajando.
+    pendiente = int(cubierto_desde) if cubierto_desde else cursor
 
-    filas = armar_filas_eventos(eventos, estado, mapeo)
+    while cursor < hasta_ms and usados < bloques_max:
+        fin = min(cursor + bloque_ms, hasta_ms)
+        try:
+            eventos = traer_eventos(estacion, device_id, cursor, fin)
+        except Exception as falla:                          # noqa: BLE001
+            error_limite = falla
+            break
+        usados += 1
+        total_eventos += len(eventos)
+        filas += armar_filas_eventos(eventos, estado, mapeo)
+        print("  bloque %s -> %s: %d eventos" % (
+            datetime.fromtimestamp(cursor / 1000.0, tz=timezone.utc).strftime("%d %H:%M"),
+            datetime.fromtimestamp(fin / 1000.0, tz=timezone.utc).strftime("%d %H:%M"), len(eventos)))
+        cursor = fin
+        if cursor < hasta_ms:
+            time.sleep(3)          # respiro entre bloques: Tuya corta si se consulta muy seguido
+
+    while usados < bloques_max and pendiente > 0:
+        fin = pendiente
+        inicio_bloque = max(0, fin - bloque_ms)
+        try:
+            eventos = traer_eventos(estacion, device_id, inicio_bloque, fin)
+        except Exception as falla:                          # noqa: BLE001
+            error_limite = falla
+            break
+        usados += 1
+        if not eventos:
+            print("  hacia atras: Tuya no guarda nada antes de %s"
+                  % datetime.fromtimestamp(fin / 1000.0, tz=timezone.utc).strftime("%d %H:%M"))
+            pendiente = 0
+            break
+        total_eventos += len(eventos)
+        # Cada bloque viejo arma su propio estado (son datos anteriores a lo que ya tenemos)
+        filas += armar_filas_eventos(eventos, {}, mapeo)
+        print("  hacia atras %s -> %s: %d eventos" % (
+            datetime.fromtimestamp(inicio_bloque / 1000.0, tz=timezone.utc).strftime("%d %H:%M"),
+            datetime.fromtimestamp(fin / 1000.0, tz=timezone.utc).strftime("%d %H:%M"), len(eventos)))
+        pendiente = inicio_bloque
+        time.sleep(3)
+
+    print("Eventos en total: %d" % total_eventos)
+    if error_limite:
+        aviso("Tuya corto la consulta del registro (%s): la proxima corrida sigue donde quedo"
+              % error_limite)
 
     # La lectura actual va siempre como ultima fila, asi el archivo termina en el presente
     estado.update({str(k): v for k, v in (valores_actuales or {}).items()})
@@ -420,7 +471,9 @@ def completar_historial(estacion, device_id, mapeo, valores_actuales, ruta_csv, 
                 ultima = fila["fecha_utc"]
                 escritas += 1
 
-    guardar_json(ruta_estado, {"ultimo_ms": hasta_ms, "intento_ms": ahora_ms, "estado": estado})
+    guardar_json(ruta_estado, {"ultimo_ms": int(max(cursor, ultimo_ms or 0)),
+                               "cubierto_desde_ms": int(pendiente),
+                               "intento_ms": ahora_ms, "estado": estado})
     print("Historial completo: %d filas nuevas en %d archivo(s) del dia" % (escritas, len(por_dia)))
     return escritas
 
@@ -444,6 +497,8 @@ def main():
     estado_crudo = os.environ.get("ESTADO_CRUDO", "data/estado_crudo.json")
     horas_iniciales = float(os.environ.get("BACKFILL_HORAS", "24"))
     minutos_entre = float(os.environ.get("BACKFILL_MINUTOS", "30"))
+    bloque_horas = float(os.environ.get("BACKFILL_BLOQUE_HORAS", "2"))
+    bloques_max = int(os.environ.get("BACKFILL_BLOQUES", "4"))
     estacion_nombre = os.environ.get("ESTACION", "Estacion Tuya")
     simular = argumentos.simular or os.environ.get("SIMULAR", "") in ("1", "true", "si", "sí")
 
@@ -511,7 +566,8 @@ def main():
     if historial_completo:
         try:
             completar_historial(estacion, device_id, mapeo, valores,
-                                historial_completo, estado_crudo, horas_iniciales, minutos_entre)
+                                historial_completo, estado_crudo, horas_iniciales, minutos_entre,
+                                bloque_horas, bloques_max)
         except Exception as falla:                          # noqa: BLE001
             aviso("no pude completar el historial: %s" % falla)
 
