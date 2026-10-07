@@ -5,11 +5,10 @@ name: Puente Tuya a Windguru
 
 on:
   schedule:
-    # Cada hora en punto (horario UTC). El repositorio es PRIVADO y el plan gratuito
-    # incluye 2.000 minutos/mes de Actions, facturando cada corrida como minimo 1 minuto:
-    # cada 10 minutos serian ~4.300 min/mes y no entra. Cada hora son ~730 min/mes.
-    # Si algun dia lo pasas a publico, podes usar '*/10 * * * *' sin costo.
-    - cron: '0 * * * *'
+    # Cada 10 minutos (horario UTC). El repositorio es PUBLICO, asi que los minutos de
+    # Actions son gratis e ilimitados. (En un repo privado serian ~4.300 min/mes contra
+    # un cupo de 2.000, y habria que usar '0 * * * *'.)
+    - cron: '*/10 * * * *'
   workflow_dispatch:
     inputs:
       simular:

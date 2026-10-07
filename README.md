@@ -52,12 +52,13 @@ datos en **Windguru** y/o **Weathercloud**, corriendo en los servidores de GitHu
 ## Frecuencia, cupos y límites
 
 - **Repo público**: GitHub Actions es gratis y sin límite de minutos → cada 10 minutos.
-- Este repositorio es **privado**: el plan gratuito incluye 2.000 minutos/mes de Actions y
-  cada corrida se factura como mínimo 1 minuto. Por eso el cron está **cada hora**
-  (`0 * * * *`), que son ~730 min/mes (y `frost-alerta` ya usa ~730: entre los dos quedan
-  por debajo del cupo).
-- Si algún día lo pasás a **público**, Actions pasa a ser gratis e ilimitado y podés cambiar
-  el cron a cada 10 minutos (`*/10 * * * *`) sin costo.
+- Este repositorio es **público**, así que los minutos de GitHub Actions son **gratis e
+  ilimitados** y el cron corre **cada 10 minutos** (`*/10 * * * *`). (En un repo privado el
+  plan gratuito da 2.000 min/mes: cada 10 minutos serían ~4.300 y no entraría; ahí habría
+  que usar cada hora, `0 * * * *`.)
+- Los **secretos no se publican**: viven en *Settings → Secrets*, están cifrados y solo se
+  inyectan al correr el workflow. En este repositorio no hay ninguna credencial, ni en el
+  código ni en la historia de commits.
 - El **cron de GitHub no es exacto**: puede demorarse varios minutos o saltear alguna corrida.
   Para Windguru no es problema (acepta datos de hasta 2 horas de antigüedad).
 - **Weathercloud** rechaza envíos más seguidos que 10 minutos en el plan gratuito.
