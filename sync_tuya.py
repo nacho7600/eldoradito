@@ -30,7 +30,8 @@ import hashlib
 import json
 import os
 import sys
-from datetime import datetime, timezone
+import time
+from datetime import datetime, timedelta, timezone
 
 import requests
 import tinytuya
@@ -265,6 +266,165 @@ def guardar_historial(ruta, datos, momento):
         escritor.writerow([fila.get(campo, "") for campo in campos])
 
 
+def leer_json(ruta, por_defecto=None):
+    try:
+        with open(ruta, encoding="utf-8") as archivo:
+            return json.load(archivo)
+    except (OSError, ValueError):
+        return por_defecto
+
+
+def guardar_json(ruta, contenido):
+    carpeta = os.path.dirname(ruta)
+    if carpeta:
+        os.makedirs(carpeta, exist_ok=True)
+    with open(ruta, "w", encoding="utf-8") as archivo:
+        json.dump(contenido, archivo, ensure_ascii=False, indent=2)
+
+
+def traer_eventos(estacion, device_id, desde_ms, hasta_ms, maximo=60):
+    """Trae del registro de Tuya todos los reportes de datos ocurridos en el rango.
+
+    Cada evento es un dato que CAMBIO, con su hora real (event_time, en milisegundos).
+    """
+    eventos, inicio, consultas = [], None, 0
+    while consultas < maximo:
+        consulta = {
+            "start_time": desde_ms,
+            "end_time": hasta_ms,
+            "type": "7",                 # 7 = reporte de datos (DP report)
+            "size": 100,
+            "query_type": 1,
+        }
+        if inicio:
+            consulta["start_row_key"] = inicio
+        respuesta = estacion.cloudrequest("/v1.0/devices/%s/logs" % device_id, query=consulta)
+        consultas += 1
+        if not isinstance(respuesta, dict) or not respuesta.get("success"):
+            raise RuntimeError("Tuya respondio con error al pedir el registro: %s"
+                               % json.dumps(respuesta, ensure_ascii=False)[:250])
+        resultado = respuesta.get("result") or {}
+        eventos += resultado.get("logs") or []
+        if resultado.get("has_next") and resultado.get("next_row_key"):
+            inicio = resultado["next_row_key"]
+            time.sleep(2)               # pausa entre paginas: Tuya corta si se consulta muy seguido
+        else:
+            break
+    return eventos
+
+
+def armar_filas_eventos(eventos, estado, mapeo):
+    """Reconstruye el estado completo en cada momento en que cambio algo.
+
+    `estado` se modifica: queda con el ultimo valor conocido de cada codigo.
+    """
+    filas = []
+    for evento in sorted(eventos, key=lambda x: x.get("event_time") or 0):
+        codigo = evento.get("code")
+        sello = evento.get("event_time")
+        if not codigo or sello is None:
+            continue
+        estado[str(codigo)] = evento.get("value")
+        momento = datetime.fromtimestamp(int(sello) / 1000.0, tz=timezone.utc)
+        filas.append({
+            "fecha_utc": momento.strftime("%Y-%m-%d %H:%M:%S"),
+            "cambio": str(codigo),
+            "datos": dict(traducir(estado, mapeo)[0]),
+        })
+    return filas
+
+
+def ruta_por_dia(ruta_base, dia):
+    """data/historial_completo.csv -> data/historial_completo_2026-10-07.csv"""
+    raiz, extension = os.path.splitext(ruta_base)
+    return "%s_%s%s" % (raiz, dia, extension or ".csv")
+
+
+def completar_historial(estacion, device_id, mapeo, valores_actuales, ruta_csv, ruta_estado,
+                        horas_iniciales, minutos_entre):
+    """Agrega al CSV completo todas las mediciones que pasaron desde la ultima corrida.
+
+    Tuya limita la frecuencia de la consulta del registro ("The log query is too frequent"),
+    asi que se consulta como maximo una vez cada `minutos_entre` minutos. Si falla, se anota
+    el intento (para no insistir) pero NO se pierde el rango: la proxima vez trae todo junto.
+    """
+    guardado = leer_json(ruta_estado, {}) or {}
+    estado = dict(guardado.get("estado") or {})
+    ultimo_ms = guardado.get("ultimo_ms")
+    intento_ms = guardado.get("intento_ms")
+
+    ahora = datetime.now(timezone.utc)
+    ahora_ms = int(ahora.timestamp() * 1000)
+
+    if intento_ms and (ahora_ms - int(intento_ms)) < minutos_entre * 60 * 1000:
+        print("Salteo la consulta del registro de Tuya: la anterior fue hace %.0f min y se"
+              " consulta cada %.0f min para no chocar con el limite."
+              % ((ahora_ms - int(intento_ms)) / 60000.0, minutos_entre))
+        return 0
+
+    hasta_ms = ahora_ms
+    if ultimo_ms:
+        desde_ms = int(ultimo_ms)
+    else:
+        desde_ms = int((ahora - timedelta(hours=horas_iniciales)).timestamp() * 1000)
+        print("Primera corrida del historial completo: traigo las ultimas %s horas" % horas_iniciales)
+
+    try:
+        eventos = traer_eventos(estacion, device_id, desde_ms, hasta_ms)
+    except Exception:
+        guardar_json(ruta_estado, dict(guardado, intento_ms=ahora_ms))
+        raise
+
+    print("Eventos en el registro de Tuya: %d (desde %s)"
+          % (len(eventos), datetime.fromtimestamp(desde_ms / 1000.0, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")))
+
+    filas = armar_filas_eventos(eventos, estado, mapeo)
+
+    # La lectura actual va siempre como ultima fila, asi el archivo termina en el presente
+    estado.update({str(k): v for k, v in (valores_actuales or {}).items()})
+    datos_ahora, _ = traducir(estado, mapeo)
+    filas.append({
+        "fecha_utc": ahora.strftime("%Y-%m-%d %H:%M:%S"),
+        "cambio": "consulta",
+        "datos": datos_ahora,
+    })
+
+    campos = ["fecha_utc", "cambio"] + sorted(datos_ahora.keys())
+    escritas = 0
+    por_dia = {}
+    for fila in filas:
+        por_dia.setdefault(fila["fecha_utc"][:10], []).append(fila)
+
+    for dia in sorted(por_dia):
+        ruta_csv_dia = ruta_por_dia(ruta_csv, dia)
+        carpeta = os.path.dirname(ruta_csv_dia)
+        if carpeta:
+            os.makedirs(carpeta, exist_ok=True)
+        nuevo = not os.path.exists(ruta_csv_dia)
+        ultima = None
+        if not nuevo:
+            with open(ruta_csv_dia, encoding="utf-8") as archivo:
+                for linea in archivo:
+                    if linea.strip():
+                        ultima = linea.split(",")[0]
+        with open(ruta_csv_dia, "a", newline="", encoding="utf-8") as archivo:
+            escritor = csv.writer(archivo)
+            if nuevo:
+                escritor.writerow(campos)
+            for fila in por_dia[dia]:
+                if ultima and fila["fecha_utc"] <= ultima:
+                    continue
+                escritor.writerow([fila["fecha_utc"], fila["cambio"]]
+                                  + [(round(fila["datos"][campo], 2) if campo in fila["datos"] else "")
+                                     for campo in sorted(datos_ahora.keys())])
+                ultima = fila["fecha_utc"]
+                escritas += 1
+
+    guardar_json(ruta_estado, {"ultimo_ms": hasta_ms, "intento_ms": ahora_ms, "estado": estado})
+    print("Historial completo: %d filas nuevas en %d archivo(s) del dia" % (escritas, len(por_dia)))
+    return escritas
+
+
 def main():
     analizador = argparse.ArgumentParser(description="Puente Tuya -> Windguru / Weathercloud para GitHub Actions.")
     analizador.add_argument("--simular", action="store_true", help="leer y mostrar, sin publicar")
@@ -280,6 +440,10 @@ def main():
     weathercloud_key = os.environ.get("WEATHERCLOUD_KEY", "")
     max_antiguedad = float(os.environ.get("MAX_ANTIGUEDAD_MIN", "90"))
     historial = os.environ.get("HISTORIAL", "data/historial.csv")
+    historial_completo = os.environ.get("HISTORIAL_COMPLETO", "data/historial_completo.csv")
+    estado_crudo = os.environ.get("ESTADO_CRUDO", "data/estado_crudo.json")
+    horas_iniciales = float(os.environ.get("BACKFILL_HORAS", "24"))
+    minutos_entre = float(os.environ.get("BACKFILL_MINUTOS", "30"))
     estacion_nombre = os.environ.get("ESTACION", "Estacion Tuya")
     simular = argumentos.simular or os.environ.get("SIMULAR", "") in ("1", "true", "si", "sí")
 
@@ -341,6 +505,16 @@ def main():
         publicados += 1 if ok else 0
 
     guardar_historial(historial, datos, momento)
+
+    # Relleno: trae del registro de Tuya todas las mediciones desde la corrida anterior,
+    # asi el historial del repo queda completo aunque GitHub saltee corridas.
+    if historial_completo:
+        try:
+            completar_historial(estacion, device_id, mapeo, valores,
+                                historial_completo, estado_crudo, horas_iniciales, minutos_entre)
+        except Exception as falla:                          # noqa: BLE001
+            aviso("no pude completar el historial: %s" % falla)
+
     print("Listo. Destinos publicados: %d%s" % (publicados, " (simulado)" if simular else ""))
     return 0
 

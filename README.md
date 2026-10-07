@@ -49,13 +49,37 @@ datos en **Windguru** y/o **Weathercloud**, corriendo en los servidores de GitHu
    los datos que leyó, sin que se publique nada.
 5. **Corrida real**: *Run workflow* sin marcar la casilla. De ahí en más corre solo.
 
+## Historial completo (sin huecos)
+
+GitHub puede **saltear corridas programadas** (es un problema conocido y documentado de su
+planificador, no del código), así que el workflow **rellena** el historial leyendo el registro
+de eventos de Tuya, que trae la hora real de cada medición:
+
+| Archivo | Qué es |
+|---|---|
+| `data/historial.csv` | Una fila por corrida — el "latido" del puente |
+| `data/historial_completo_AAAA-MM-DD.csv` | **Todas** las mediciones del día, reconstruidas del registro de Tuya (una fila por segundo en que cambió algo) |
+| `data/estado_crudo.json` | Estado interno: último valor de cada código y hasta cuándo se leyó el registro |
+
+Detalles a tener en cuenta:
+
+- La consulta del registro se hace **como máximo cada 30 minutos** (`BACKFILL_MINUTOS`), porque
+  Tuya la limita: si se consulta muy seguido responde *"The log query is too frequent, please
+  try again later!"*. En la primera corrida trae las últimas 24 h (`BACKFILL_HORAS`) y después
+  solo lo que falta.
+- Si Tuya rechaza la consulta, **no se pierde el rango**: se anota el intento, se espera y la
+  próxima vez trae todo junto.
+- El registro de Tuya **no llega muy atrás** (en la prueba, unas 9 horas), así que el relleno
+  cubre huecos recientes, no días enteros.
+- **Windguru no se puede rellenar** (rechaza datos de más de 2 horas de antigüedad): el relleno
+  es para el archivo del repositorio.
+
 ## Frecuencia, cupos y límites
 
-- **Repo público**: GitHub Actions es gratis y sin límite de minutos → cada 10 minutos.
 - Este repositorio es **público**, así que los minutos de GitHub Actions son **gratis e
-  ilimitados** y el cron corre **cada 10 minutos** (`*/10 * * * *`). (En un repo privado el
-  plan gratuito da 2.000 min/mes: cada 10 minutos serían ~4.300 y no entraría; ahí habría
-  que usar cada hora, `0 * * * *`.)
+  ilimitados** y el cron pide **dos series por hora** (`:03, :08, :13, ...`), en minutos fuera
+  del pico porque GitHub descarta corridas cuando hay carga. Si igual se saltea alguna, el
+  historial completo la rellena después.
 - Los **secretos no se publican**: viven en *Settings → Secrets*, están cifrados y solo se
   inyectan al correr el workflow. En este repositorio no hay ninguna credencial, ni en el
   código ni en la historia de commits.
