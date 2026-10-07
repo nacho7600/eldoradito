@@ -340,6 +340,38 @@ def ruta_por_dia(ruta_base, dia):
     return "%s_%s%s" % (raiz, dia, extension or ".csv")
 
 
+def fecha_mas_vieja(ruta_base):
+    """Fecha (en ms) del registro mas viejo ya guardado en los archivos de historial completo.
+
+    Sirve para saber desde donde seguir bajando cuando el estado interno no lo dice.
+    """
+    carpeta = os.path.dirname(ruta_base) or "."
+    prefijo = os.path.splitext(os.path.basename(ruta_base))[0]
+    if not os.path.isdir(carpeta):
+        return None
+    mas_vieja = None
+    for nombre in sorted(os.listdir(carpeta)):
+        if not nombre.startswith(prefijo) or not nombre.endswith(".csv"):
+            continue
+        try:
+            with open(os.path.join(carpeta, nombre), encoding="utf-8") as archivo:
+                for linea in archivo:
+                    if not linea.strip() or linea.startswith("fecha_utc"):
+                        continue
+                    fecha = linea.split(",")[0]
+                    if mas_vieja is None or fecha < mas_vieja:
+                        mas_vieja = fecha
+        except OSError:
+            continue
+    if not mas_vieja:
+        return None
+    try:
+        momento = datetime.strptime(mas_vieja, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+        return int(momento.timestamp() * 1000)
+    except ValueError:
+        return None
+
+
 def completar_historial(estacion, device_id, mapeo, valores_actuales, ruta_csv, ruta_estado,
                         horas_iniciales, minutos_entre, bloque_horas, bloques_max):
     """Agrega al CSV completo todas las mediciones que pasaron desde la ultima corrida.
@@ -384,7 +416,8 @@ def completar_historial(estacion, device_id, mapeo, valores_actuales, ruta_csv, 
     ventana = bloques_max * bloque_ms
     cursor = max(desde_ms, hasta_ms - ventana)
     # `pendiente` es el punto mas viejo que ya tenemos cubierto: desde ahi se sigue bajando.
-    pendiente = int(cubierto_desde) if cubierto_desde else cursor
+    # Si el estado no lo dice, se deduce del registro mas viejo que haya en los archivos.
+    pendiente = int(cubierto_desde) if cubierto_desde else (fecha_mas_vieja(ruta_csv) or cursor)
 
     while cursor < hasta_ms and usados < bloques_max:
         fin = min(cursor + bloque_ms, hasta_ms)
