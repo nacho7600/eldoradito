@@ -5,10 +5,11 @@ name: Puente Tuya a Windguru
 
 on:
   schedule:
-    # Cada 10 minutos (horario UTC). El repositorio es PUBLICO, asi que los minutos de
-    # Actions son gratis e ilimitados. (En un repo privado serian ~4.300 min/mes contra
-    # un cupo de 2.000, y habria que usar '0 * * * *'.)
-    - cron: '*/10 * * * *'
+    # Cada 10 minutos, pero en minutos "raros" y con dos series por hora: GitHub demora o
+    # directamente saltea corridas programadas cuando hay carga (el inicio de cada hora es
+    # el peor momento), asi que pedir dos series aumenta las chances de que alguna entre.
+    - cron: '3,13,23,33,43,53 * * * *'
+    - cron: '8,18,28,38,48,58 * * * *'
   workflow_dispatch:
     inputs:
       simular:
