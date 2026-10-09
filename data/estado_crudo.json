@@ -1,9 +1,9 @@
 {
-  "ultimo_ms": 1791547815333,
-  "cubierto_desde_ms": 0,
-  "intento_ms": 1791547815333,
+  "ultimo_ms": 1791549618147,
+  "cubierto_desde_ms": 1791308946000,
+  "intento_ms": 1791549618147,
   "estado": {
-    "temp_current": 144,
+    "temp_current": 145,
     "windspeed_gust": 239,
     "feellike_temp": 63,
     "temp_current_external": 92,
