@@ -1,7 +1,7 @@
 {
-  "ultimo_ms": 1791520817079,
-  "cubierto_desde_ms": 0,
-  "intento_ms": 1791520817079,
+  "ultimo_ms": 1791523215799,
+  "cubierto_desde_ms": 1791308946000,
+  "intento_ms": 1791523215799,
   "estado": {
     "temp_current": 134,
     "windspeed_gust": 239,
@@ -37,9 +37,9 @@
     "data": "AAEBAQEBAQEBAQEBAQEBAQEBAQEBAAAAAAAAAAAA/////////////w==",
     "setting": "AAEBAQEBAQEBAQED//////////////////////////8=",
     "direc_format": "name",
-    "sensor_line": "AGR/f3////////////////////////////////////8=",
+    "sensor_line": "AMh/f3////////////////////////////////////8=",
     "bklight_setting": "AAEAAgEVAAYAAAA=",
-    "data_overflow": "AAAAAAMDAwMDAwAAAAAAAAAAAAAA/////////////////////////w==",
+    "data_overflow": "AAAAAAMDAwMDAwMDAwMDAwMDAwMD/////////////////////////w==",
     "Rain_event": 0,
     "Wind_speed": 174,
     "Wing_direction": "AFNTVwAAxAOA",
