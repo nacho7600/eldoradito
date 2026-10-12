@@ -1,0 +1,5 @@
+fecha_utc,cambio,bateria,humedad,humedad_interior,lluvia_mm,lluvia_tasa_mmh,presion,punto_rocio,rafaga_kmh,temperatura,temperatura_interior,uv,viento_kmh
+2026-10-12 00:03:01,temp_current,100.0,96.0,55.0,0.0,0.0,1013.0,8.5,23.9,9.2,14.4,0.0,20.9
+2026-10-12 00:07:01,temp_current,100.0,96.0,55.0,0.0,0.0,1013.0,8.5,23.9,9.2,14.3,0.0,20.9
+2026-10-12 00:12:31,temp_current,100.0,96.0,55.0,0.0,0.0,1013.0,8.5,23.9,9.2,14.2,0.0,20.9
+2026-10-12 00:20:16,consulta,100.0,96.0,55.0,0.0,0.0,1013.0,8.5,23.9,9.2,14.2,0.0,20.9
