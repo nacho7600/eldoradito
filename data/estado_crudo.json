@@ -1,9 +1,9 @@
 {
-  "ultimo_ms": 1792756819089,
+  "ultimo_ms": 1792759215718,
   "cubierto_desde_ms": 0,
-  "intento_ms": 1792756819089,
+  "intento_ms": 1792759215718,
   "estado": {
-    "temp_current": 198,
+    "temp_current": 206,
     "windspeed_gust": 239,
     "feellike_temp": 63,
     "temp_current_external": 92,
@@ -11,7 +11,7 @@
     "heat_index": 92,
     "humidity_outdoor": 96,
     "windspeed_avg": 209,
-    "humidity_value": 65,
+    "humidity_value": 64,
     "atmospheric_pressture": 999,
     "pressure_drop": 999,
     "rain_24h": 0,
